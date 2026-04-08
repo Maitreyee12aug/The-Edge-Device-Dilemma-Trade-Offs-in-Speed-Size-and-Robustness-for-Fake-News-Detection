@@ -1,29 +1,76 @@
 # The Edge-Device Dilemma: Trade-Offs in Speed, Size, and Robustness for Fake News Detection
 
-> **Ganguly, M. & Dey, P.** — Department of Information Technology, Government College of Engineering & Ceramic Technology  
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
+
+> ⚠️ **Citation Notice:** This repository contains the official implementation
+> of the manuscript *"The Edge-Device Dilemma: Trade-Offs in Speed, Size, and
+> Robustness for Fake News Detection"*.
+> If you use this code or build upon this work, please cite our paper using the
+> BibTeX entry provided at the bottom of this README.
 
 ---
 
 ## Overview
 
-This repository contains the full source code for the paper **"The Edge-Device Dilemma"**, an empirical study that quantifies the trade-offs between inference efficiency, model size, and zero-shot cross-domain generalization for fake news detection on resource-constrained edge devices.
+This is the official implementation of:
 
-The paper asks: *can a model be simultaneously fast, small, and robust to domain shift?* The answer is — not without deliberate architectural choices. This repo reproduces all experiments and figures from the paper.
+**"The Edge-Device Dilemma: Trade-Offs in Speed, Size, and Robustness for Fake News Detection"**  submitted for consideration on Sadhana, Springer. 
 
----
+*Maitreyee Ganguly, Paramita Dey*  
+*Department of Information Technology, Government College of Engineering & Ceramic Technology, Kolkata, India*
 
-## Key Findings
+We study whether a fake news detection model can be simultaneously **fast**, **small**, and **robust to domain shift** — the *Edge-Device Dilemma*. An empirical multi-phase study compares five architectural paradigms across two misinformation datasets, and proposes a **Dynamic Inference Cascading** framework that navigates the efficiency–robustness trade-off in practice.
 
-| Model | In-Domain Acc. | Cross-Domain Acc. | Latency | Size |
+### Key Findings
+
+| Model | In-Domain Acc. | Zero-Shot Acc. | Latency | Size |
 |---|---|---|---|---|
 | **Hashing-SVC** | 99.79% | 51–54% | **0.14 ms** | **2 MB** |
-| TF-IDF + SVC | 99.80% | 51–55% | 0.22 ms | 76 MB |
+| TF-IDF-SVC | 99.80% | 51–55% | 0.22 ms | 76 MB |
 | fastText | 99.79% | 52–56% | 0.08 ms | 384 MB |
 | **Hybrid Super-Vector** | 99.10% | **65–69%** | 4.82 ms | 14.5 MB |
 | BERT | 99.82% | 48–50% | 125 ms | 440 MB |
 
-**Proposed framework:** *Dynamic Inference Cascading* — a two-tier system that uses Hashing-SVC for high-confidence inputs and falls back to the Hybrid Super-Vector when domain shift is detected, achieving 88% greater efficiency than static BERT while recovering accuracy during drift events.
+---
+
+## Architecture
+
+```
+Raw Text Input
+      │
+      ▼
+┌─────────────────────────────┐
+│  Low-Latency Preprocessor   │   §3.2
+│  Regex · Normalise · Tokenise│
+└──────────────┬──────────────┘
+               │
+       ┌───────┴────────┐
+       ▼                ▼
+  v_lex (P1/P2)    v_style (P3)
+  HashingVec       VADER · textstat
+  TF-IDF           readability · ratios
+  fastText         (13-dim vector)
+       │                │
+       └───────┬────────┘
+               ▼
+      v_final = v_lex ⊕ v_style     §3.3.3
+      Hybrid Super-Vector
+               │
+               ▼
+     ┌──────────────────┐
+     │   LinearSVC      │
+     │   Classifier     │
+     └────────┬─────────┘
+              │
+     ┌────────┴────────────────────┐
+     │  Dynamic Inference Cascade  │   §6.1
+     │                             │
+     │  |score| ≥ τ  → Tier-1     │   fast path   (0.14 ms)
+     │  |score| < τ  → Tier-2     │   robust path (4.82 ms)
+     └─────────────────────────────┘
+```
 
 ---
 
@@ -32,124 +79,169 @@ The paper asks: *can a model be simultaneously fast, small, and robust to domain
 ```
 edge-device-dilemma/
 │
-├── README.md                          # This file
-├── requirements.txt                   # All Python dependencies
-├── setup.sh                           # One-command environment setup
+├── README.md
+├── requirements.txt
+├── gitignore
+├── __init__.py
 │
-├── configs/
-│   └── config.yaml                    # All dataset paths and hyperparameters
+├── config.py          ← All hyperparameters and dataset paths
+├── preprocess.py      ← §3.2: Low-latency preprocessing pipeline
+├── dataset.py         ← §3.3: Feature engineering & model builders
+│                              (SuperVectorFeaturizer, Hashing-SVC,
+│                               TF-IDF-SVC, fastText, Super-Vector)
 │
-├── data/
-│   └── README_data.md                 # Dataset download & preparation instructions
-│
-├── src/                               # Core library (importable modules)
-│   ├── preprocessing/
-│   │   └── text_cleaner.py            # Preprocessing pipeline
-│   ├── features/
-│   │   └── feature_engineering.py     # Super-Vector featurizer & stylistic features
-│   ├── models/
-│   │   ├── lightweight_models.py      # Hashing-SVC, TF-IDF, fastText wrappers
-│   │   ├── bert_model.py              # BERT fine-tuning & evaluation
-│   │   └── dynamic_cascade.py         # Dynamic Inference Cascading framework
-│   └── evaluation/
-│       └── metrics.py                 # Accuracy, F1, latency, footprint utilities
-│
-├── scripts/                           # End-to-end runnable experiment scripts
-│   ├── 01_phase1_efficiency.py        # Phase I: In-domain efficiency benchmarking
-│   ├── 02_phase2_robustness.py        # Phase II: Bidirectional zero-shot transfer
-│   ├── 03_ablation_study.py           # Ablation: Lexical vs. Stylistic vs. Super-Vector
-│   ├── 04_dynamic_cascade.py          # Dynamic Inference Cascading simulation
-│   └── 05_bert_experiment.py          # BERT training + cross-domain evaluation
-│
-├── notebooks/
-│   └── full_pipeline_walkthrough.ipynb  # Google Colab-ready notebook
-│
-└── results/
-    └── figures/                       # Generated plots (saved by scripts)
+├── train.py           ← §3.4.1 / §4.2: Phase I in-domain efficiency benchmarking
+├── evaluate.py        ← §3.4.2 / §4.4: Phase II bidirectional zero-shot robustness
+├── ablation.py        ← §4.7:          Ablation study (Table 9)
+├── visualize.py       ← §4–6:          All paper figures (Figs 3–6, Table 9)
+└── inference.py       ← §6.1–6.2:      Dynamic Inference Cascading + BERT baseline
 ```
+
+---
+
+## Requirements
+
+### System Requirements
+
+- Python >= 3.8
+- CPU sufficient for all models except BERT
+- GPU with >= 4 GB VRAM recommended for `inference.py` in `bert` mode
+
+### Installation
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/Maitreyee12aug/edge-device-dilemma.git
+cd edge-device-dilemma
+
+# 2. Create virtual environment
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Download NLTK data
+python -c "import nltk; [nltk.download(r, quiet=True) for r in ('stopwords','punkt','punkt_tab')]"
+```
+
+### Core Dependencies
+
+| Package | Version | Purpose |
+|---|---|---|
+| scikit-learn | >= 1.2.0 | Hashing-SVC, TF-IDF-SVC, LinearSVC |
+| fasttext-wheel | >= 0.9.2 | fastText (Paradigm 2) |
+| vaderSentiment | >= 3.3.2 | Sentiment features (Super-Vector) |
+| textstat | >= 0.7.3 | Readability features (Super-Vector) |
+| torch | >= 2.0.0 | BERT baseline |
+| transformers | >= 4.30.0 | bert-base-uncased |
 
 ---
 
 ## Datasets
 
-Two publicly available datasets are used. See [`data/README_data.md`](data/README_data.md) for download links and preparation steps.
-
 | Dataset | Role | Size | Source |
 |---|---|---|---|
-| **ISOT Fake News** (`concatenated_dataset.csv`) | Primary in-domain (Political) | 44,898 articles | [UVic ISOT](https://onlineacademiccommunity.uvic.ca/isot/2022/11/27/fake-news-detection-datasets/) |
-| **CONSTRAINT 2021** (`Constraint_Train.csv`) | Zero-shot target (COVID-19) | 6,420 tweets | [CONSTRAINT 2021 Shared Task](https://constraint-shared-task-2021.github.io/) |
+| **ISOT Fake News** (`concatenated_dataset.csv`) | Political corpus — in-domain source | 44,898 articles | [UVic ISOT](https://onlineacademiccommunity.uvic.ca/isot/) |
+| **CONSTRAINT 2021** (`Constraint_Train.csv`) | COVID-19 corpus — zero-shot target | 6,420 tweets | [CONSTRAINT 2021](https://constraint-shared-task-2021.github.io/) |
 
-Both datasets use binary labels: `real` → `0`, `fake` → `1`.
+Place both CSV files in the repo root directory. Both require columns `tweet` (text) and `label` (`real` / `fake`). See `config.py` to adjust column names.
+
+**ISOT preparation:**
+```python
+import pandas as pd
+fake = pd.read_csv("Fake.csv"); fake["label"] = "fake"
+real = pd.read_csv("True.csv"); real["label"] = "real"
+df   = pd.concat([fake, real]).rename(columns={"text": "tweet"})
+df[["tweet", "label"]].to_csv("concatenated_dataset.csv", index=False)
+```
 
 ---
 
-## Quickstart
+## Usage
 
-### 1. Clone and set up
-
+### Step 1 — Verify Data Loading
 ```bash
-git clone https://github.com/<your-username>/edge-device-dilemma.git
-cd edge-device-dilemma
-bash setup.sh
+python preprocess.py
 ```
 
-### 2. Add your data
-
-Place your datasets in the `data/` directory:
-
-```
-data/
-  concatenated_dataset.csv   # Political corpus (ISOT)
-  Constraint_Train.csv       # COVID-19 corpus (CONSTRAINT 2021)
-```
-
-Confirm column names match what is set in [`configs/config.yaml`](configs/config.yaml).
-
-### 3. Run experiments
-
+### Step 2 — Phase I: In-Domain Efficiency Benchmarking (Tables 6 & 7)
 ```bash
-# Phase I: In-domain efficiency (Hashing, TF-IDF, fastText, Super-Vector)
-python scripts/01_phase1_efficiency.py
-
-# Phase II: Bidirectional zero-shot robustness
-python scripts/02_phase2_robustness.py
-
-# Ablation study (lexical vs. stylistic vs. combined)
-python scripts/03_ablation_study.py
-
-# Dynamic Inference Cascading simulation
-python scripts/04_dynamic_cascade.py
-
-# BERT baseline (GPU strongly recommended)
-python scripts/05_bert_experiment.py
+python train.py
 ```
 
-All plots are saved to `results/figures/`.
+### Step 3 — Phase II: Bidirectional Zero-Shot Robustness (Table 8, Figure 5)
+```bash
+python evaluate.py
+```
 
-### 4. Google Colab
+### Step 4 — Ablation Study (Table 9)
+```bash
+python ablation.py
+```
 
-Open [`notebooks/full_pipeline_walkthrough.ipynb`](notebooks/full_pipeline_walkthrough.ipynb) in Colab for a GPU-enabled walkthrough of the full pipeline.
+### Step 5 — Generate All Figures (Figures 3–6)
+```bash
+python visualize.py
+```
+
+### Step 6 — Dynamic Inference Cascading (Figure 8, Table 10)
+```bash
+python inference.py          # MODE = "cascade" in inference.py
+```
+
+### Step 7 — BERT Baseline (GPU recommended)
+```bash
+# Edit inference.py: set MODE = "bert"
+python inference.py
+```
 
 ---
 
-## Reproducing the Paper's Results
+## Hyperparameters
 
-All hyperparameters used in the paper are stored in `configs/config.yaml`. The scripts read from this file directly — no code changes needed.
+All hyperparameters are defined in `config.py`.
 
-| Script | Paper Section | Expected Runtime (CPU) |
+| Parameter | Value | Paper Reference |
 |---|---|---|
-| `01_phase1_efficiency.py` | §3.4.1, §4.2 | ~5–15 min |
-| `02_phase2_robustness.py` | §3.4.2, §4.4 | ~10–25 min |
-| `03_ablation_study.py` | §4.7 | ~5–10 min |
-| `04_dynamic_cascade.py` | §6.1, §6.2 | ~5 min |
-| `05_bert_experiment.py` | §3.3.4, §4.2 | ~2–8 hrs (CPU) / ~30 min (GPU) |
+| Hashing n_features | 2^18 = 262,144 | §3.3.1-B |
+| fastText lr | 1.0 | §3.3.2 |
+| fastText dim | 100 | §3.3.2 |
+| Super-Vector hash features | 2^14 | §3.3.3 |
+| Super-Vector TF-IDF vocab | 2,000 | §3.3.3 |
+| BERT model | bert-base-uncased | §3.3.4 |
+| BERT epochs | 2 | §3.3.4 |
+| Cascade threshold τ | 0.3 | §6.1 |
+| Latency warmup iters | 1,000 | §3.4.1 |
+| Latency measurement iters | 10,000 | §3.4.1 |
 
 ---
 
+## Citation
 
+If you use this code in your research, please cite our paper.
+
+---
+
+## Contact
+
+For questions or issues, please open a GitHub Issue or contact:
+
+- **Maitreyee Ganguly** — maitreyee12aug@gmail.com  
+- **Paramita Dey** — dey.paramita77@gmail.com
 
 ---
 
 ## License
 
-This code is released for academic reproducibility. Please cite the paper if you use this work.
+This project is licensed under the MIT License.
+
+---
+
+## Acknowledgements
+
+- [ISOT Fake News Dataset](https://onlineacademiccommunity.uvic.ca/isot/)
+- [CONSTRAINT 2021 Shared Task](https://constraint-shared-task-2021.github.io/)
+- [fastText](https://fasttext.cc/)
+- [HuggingFace Transformers](https://github.com/huggingface/transformers)
+- [VADER Sentiment](https://github.com/cjhutto/vaderSentiment)
